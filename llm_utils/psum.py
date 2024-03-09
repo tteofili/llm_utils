@@ -1,24 +1,13 @@
-from openai import OpenAI
-from langchain.prompts import ChatPromptTemplate
-from langchain.prompts import ChatPromptTemplate
-from langchain import PromptTemplate, HuggingFaceHub, OpenAI
-from langchain.chat_models import AzureChatOpenAI
-from langchain.llms import HuggingFacePipeline, LlamaCpp
-from langchain_community.chat_models.huggingface import ChatHuggingFace
-from langchain_community.llms import HuggingFaceEndpoint
-from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-
+import os
 import argparse
 import arxiv
-import os
+
+from openai import OpenAI
+from langchain import PromptTemplate, HuggingFaceHub, OpenAI
+from langchain_community.chat_models.huggingface import ChatHuggingFace
+from langchain.chains import LLMChain
+from langchain.prompts import PromptTemplate
 from huggingface_hub.hf_api import HfFolder
-from getpass import getpass
-
-
-# Set your OpenAI API key
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
 
 
 def generate_combined_summary(paper_texts: list, temperature: float, model_name: str, llm_service: str,
@@ -27,23 +16,25 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
     combined_text = "\n".join(paper_texts)
 
     if llm_service == 'hf':
+        HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
         prompt = "Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
         hf_prompt = PromptTemplate.from_template(prompt)
+        # setup model locally
         llm = HuggingFaceHub(repo_id=model_name, task="text-generation",
                              model_kwargs={'temperature': temperature, 'max_length': max_length,
                                            'max_new_tokens': 1024})
+        # use a chat interface
         chat_hf = ChatHuggingFace(llm=llm)
+        # set up prompt
         chain = LLMChain(llm=chat_hf, prompt=hf_prompt)
+        # model call
         summary = chain.predict(combined_text=combined_text)
-        #llm_chain = LLMChain(prompt=hf_prompt, llm=llm)
-        #summary = print(llm_chain.run(combined_text)).content
     elif llm_service == 'openai':
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         prompt = f"Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
-        # Use ChatGPT to generate a summary
         response = client.completions.create(model=model_name, prompt=prompt, temperature=temperature,
                                              max_tokens=max_length)
 
-        # Extract the generated summary from the response
         summary = response.choices[0].text.strip()
     else:
         raise ValueError(f'unknown service type {llm_service}')
@@ -60,7 +51,7 @@ def main(papers: list, temperature: float, model_name: str, llm_service: str):
     # Generate a summary for the combined text of all research papers
     combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service)
     print("Combined Summary:")
-    print(combined_summary)
+    print(combined_summary.split('[/INST]')[1])
 
 
 if __name__ == "__main__":
