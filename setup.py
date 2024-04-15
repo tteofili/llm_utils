@@ -20,6 +20,7 @@ setuptools.setup(
           'transformers',
           'openai',
           'arxiv',
+          'arxiv2text',
           'argparse',
           'jinja2'
       ],

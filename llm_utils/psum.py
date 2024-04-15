@@ -1,8 +1,12 @@
 import os
 import argparse
+
 import arxiv
+from arxiv2text import arxiv_to_text
 
 from openai import OpenAI
+import langchain
+from langchain.cache import InMemoryCache, SQLiteCache
 from langchain import PromptTemplate, HuggingFaceHub, OpenAI
 from langchain_community.chat_models.huggingface import ChatHuggingFace
 from langchain.chains import LLMChain
@@ -11,7 +15,8 @@ from huggingface_hub.hf_api import HfFolder
 
 
 def generate_combined_summary(paper_texts: list, temperature: float, model_name: str, llm_service: str,
-                              max_length: int = 400):
+                              max_length: int = 22000):
+    max_length = max(max_length, len(paper_texts) * max_length)
     # Concatenate the text of all papers
     combined_text = "\n".join(paper_texts)
 
@@ -42,11 +47,22 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
     return summary
 
 
-def main(papers: list, temperature: float, model_name: str, llm_service: str):
+def main(papers: list, temperature: float, model_name: str, llm_service: str, cache: str, use_summaries: bool = True):
+    if cache == "memory":
+        langchain.llm_cache = InMemoryCache()
+    elif cache == "sqlite":
+        langchain.llm_cache = SQLiteCache(database_path=".langchain.db")
     client = arxiv.Client()
     search_by_ids = arxiv.Search(id_list=papers)
     results = client.results(search_by_ids)
-    paper_texts = [r.summary for r in results]
+    if use_summaries:
+        paper_texts = [r.summary for r in results]
+    else:
+        paper_texts = []
+        for r in results:
+            text = arxiv_to_text(r.pdf_url)
+            print(text)
+            paper_texts.append(text)
 
     # Generate a summary for the combined text of all research papers
     combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service)
@@ -63,12 +79,18 @@ if __name__ == "__main__":
     parser.add_argument('--deployment_name', metavar='dn', type=str, help='deployment name',
                         default="gpt-35-turbo")
     parser.add_argument('--temperature', metavar='tp', type=float, help='LLM temperature', default=0.01)
-    parser.add_argument('--llm_service', metavar='l', type=str, help='LLM service', choices=['hf', 'openai'],
-                        default='hf')
+    parser.add_argument('--use_summaries', metavar='us', type=bool, help='whether to use abstracts or not',
+                        default=True)
+    parser.add_argument('--llm_service', metavar='l', type=str, help='LLM service',
+                        choices=['hf', 'openai'], default='hf')
+    parser.add_argument('--cache', metavar='c', type=str, choices=['', 'sqlite', 'memory'], default='',
+                        help='LLM prediction caching mechanism')
 
     args = parser.parse_args()
     papers = args.papers
+    cache = args.cache
     temperature = args.temperature
     model_name = args.model_name
     llm_service = args.llm_service
-    main(papers, temperature, model_name, llm_service)
+    use_summaries = args.use_summaries
+    main(papers, temperature, model_name, llm_service, cache, use_summaries)
