@@ -24,9 +24,10 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
 
     if llm_service == 'hf':
         HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
-        prompt = ("Generate a summary for the following {num_papers} research papers (every paper starts with a {paper_header} line):"
-                  "\n{combined_text}\nThe summary should be verbose and informative."
-                  "\nAlso suggest how to possibly combine methods from the {num_papers} papers.")
+        prompt = (
+            "Generate a summary for the following {num_papers} research papers (every paper starts with a {paper_header} line):"
+            "\n{combined_text}\nThe summary should be verbose and informative."
+            "\nAlso suggest how to possibly combine methods from the {num_papers} papers.")
         hf_prompt = PromptTemplate.from_template(prompt)
         # setup model locally
         llm = HuggingFaceHub(repo_id=model_name, task="text-generation",
@@ -51,13 +52,13 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
     return summary
 
 
-def join_papers(paper_texts, paper_header, max_input_length:int = 32000):
+def join_papers(paper_texts, paper_header, max_input_length: int = 32000):
     filtered_texts = []
     for paper_text in paper_texts:
         # filter references out
         filtered_text = paper_text[:paper_text.find("REFERENCES\n[1]")]
         # filter out last part of the paper
-        filtered_text = filtered_text[:int(max_input_length/len(paper_texts))]
+        filtered_text = filtered_text[:int(max_input_length / len(paper_texts))]
         filtered_texts.append(filtered_text)
     return f"\n\n{paper_header}\n\n".join(filtered_texts)
 
