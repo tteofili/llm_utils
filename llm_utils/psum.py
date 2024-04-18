@@ -17,12 +17,16 @@ from huggingface_hub.hf_api import HfFolder
 def generate_combined_summary(paper_texts: list, temperature: float, model_name: str, llm_service: str,
                               max_length: int = 22000):
     max_length = max(max_length, len(paper_texts) * max_length)
-    # Concatenate the text of all papers
-    combined_text = "\n".join(paper_texts)
+
+    # Combine the text of the papers
+    paper_header = "**PAPER**"
+    combined_text = join_papers(paper_texts, paper_header)
 
     if llm_service == 'hf':
         HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
-        prompt = "Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
+        prompt = ("Generate a summary for the following {num_papers} research papers (every paper starts with a {paper_header} line):"
+                  "\n{combined_text}\nThe summary should be verbose and informative."
+                  "\nAlso suggest how to possibly combine methods from the {num_papers} papers.")
         hf_prompt = PromptTemplate.from_template(prompt)
         # setup model locally
         llm = HuggingFaceHub(repo_id=model_name, task="text-generation",
@@ -33,7 +37,7 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
         # set up prompt
         chain = LLMChain(llm=chat_hf, prompt=hf_prompt)
         # model call
-        summary = chain.predict(combined_text=combined_text)
+        summary = chain.predict(combined_text=combined_text, num_papers=len(paper_texts), paper_header=paper_header)
     elif llm_service == 'openai':
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         prompt = f"Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
@@ -45,6 +49,17 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
         raise ValueError(f'unknown service type {llm_service}')
 
     return summary
+
+
+def join_papers(paper_texts, paper_header, max_input_length:int = 32000):
+    filtered_texts = []
+    for paper_text in paper_texts:
+        # filter references out
+        filtered_text = paper_text[:paper_text.find("REFERENCES\n[1]")]
+        # filter out last part of the paper
+        filtered_text = filtered_text[:int(max_input_length/len(paper_texts))]
+        filtered_texts.append(filtered_text)
+    return f"\n\n{paper_header}\n\n".join(filtered_texts)
 
 
 def main(papers: list, temperature: float, model_name: str, llm_service: str, cache: str, use_summaries: bool = True):
@@ -61,7 +76,6 @@ def main(papers: list, temperature: float, model_name: str, llm_service: str, ca
         paper_texts = []
         for r in results:
             text = arxiv_to_text(r.pdf_url)
-            print(text)
             paper_texts.append(text)
 
     # Generate a summary for the combined text of all research papers
@@ -80,7 +94,7 @@ if __name__ == "__main__":
                         default="gpt-35-turbo")
     parser.add_argument('--temperature', metavar='tp', type=float, help='LLM temperature', default=0.01)
     parser.add_argument('--use_summaries', metavar='us', type=bool, help='whether to use abstracts or not',
-                        default=True)
+                        default=False)
     parser.add_argument('--llm_service', metavar='l', type=str, help='LLM service',
                         choices=['hf', 'openai'], default='hf')
     parser.add_argument('--cache', metavar='c', type=str, choices=['', 'sqlite', 'memory'], default='',
