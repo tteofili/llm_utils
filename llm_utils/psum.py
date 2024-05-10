@@ -13,9 +13,14 @@ from langchain.chains import LLMChain
 from langchain.prompts import PromptTemplate
 from huggingface_hub.hf_api import HfFolder
 
+DEFAULT_PROMPT_TEMPLATE = (
+    "Generate a summary for the following {num_papers} research papers (every paper starts with a {paper_header} line):"
+    "\n{combined_text}\nThe summary should be informative and provide implementation details."
+    "\nAlso suggest how to possibly combine methods from the {num_papers} papers, with implementation details.")
+
 
 def generate_combined_summary(paper_texts: list, temperature: float, model_name: str, llm_service: str,
-                              max_length: int = 22000):
+                              prompt_template: str = DEFAULT_PROMPT_TEMPLATE, max_length: int = 22000):
     max_length = max(max_length, len(paper_texts) * max_length)
 
     # Combine the text of the papers
@@ -24,11 +29,7 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
 
     if llm_service == 'hf':
         HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
-        prompt = (
-            "Generate a summary for the following {num_papers} research papers (every paper starts with a {paper_header} line):"
-            "\n{combined_text}\nThe summary should be verbose and informative."
-            "\nAlso suggest how to possibly combine methods from the {num_papers} papers.")
-        hf_prompt = PromptTemplate.from_template(prompt)
+        hf_prompt = PromptTemplate.from_template(prompt_template)
         # setup model locally
         llm = HuggingFaceHub(repo_id=model_name, task="text-generation",
                              model_kwargs={'temperature': temperature, 'max_length': max_length,
@@ -41,8 +42,8 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
         summary = chain.predict(combined_text=combined_text, num_papers=len(paper_texts), paper_header=paper_header)
     elif llm_service == 'openai':
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        prompt = f"Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
-        response = client.completions.create(model=model_name, prompt=prompt, temperature=temperature,
+        prompt_template = f"Generate a summary for the following research papers:\n{combined_text}\nThe summary should be concise and informative."
+        response = client.completions.create(model=model_name, prompt=prompt_template, temperature=temperature,
                                              max_tokens=max_length)
 
         summary = response.choices[0].text.strip()
@@ -63,7 +64,8 @@ def join_papers(paper_texts, paper_header, max_input_length: int = 32000):
     return f"\n\n{paper_header}\n\n".join(filtered_texts)
 
 
-def main(papers: list, temperature: float, model_name: str, llm_service: str, cache: str, use_summaries: bool = True):
+def main(papers: list, temperature: float, model_name: str, llm_service: str, cache: str, use_summaries: bool = True,
+         prompt_template: str = DEFAULT_PROMPT_TEMPLATE):
     if cache == "memory":
         langchain.llm_cache = InMemoryCache()
     elif cache == "sqlite":
@@ -80,7 +82,7 @@ def main(papers: list, temperature: float, model_name: str, llm_service: str, ca
             paper_texts.append(text)
 
     # Generate a summary for the combined text of all research papers
-    combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service)
+    combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service, prompt_template)
     print("Combined Summary:")
     print(combined_summary.split('[/INST]')[1])
 
@@ -100,6 +102,8 @@ if __name__ == "__main__":
                         choices=['hf', 'openai'], default='hf')
     parser.add_argument('--cache', metavar='c', type=str, choices=['', 'sqlite', 'memory'], default='',
                         help='LLM prediction caching mechanism')
+    parser.add_argument('--prompt_template', metavar='pt', type=str, default=DEFAULT_PROMPT_TEMPLATE,
+                        help='LLM prompt template')
 
     args = parser.parse_args()
     papers = args.papers
@@ -108,4 +112,5 @@ if __name__ == "__main__":
     model_name = args.model_name
     llm_service = args.llm_service
     use_summaries = args.use_summaries
-    main(papers, temperature, model_name, llm_service, cache, use_summaries)
+    prompt_template = args.prompt_template
+    main(papers, temperature, model_name, llm_service, cache, use_summaries, prompt_template)
