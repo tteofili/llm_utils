@@ -25,7 +25,7 @@ def generate_combined_summary(paper_texts: list, temperature: float, model_name:
 
     # Combine the text of the papers
     paper_header = "**PAPER**"
-    combined_text = join_papers(paper_texts, paper_header)
+    combined_text = join_papers(paper_texts, paper_header, max_input_length=max_length)
 
     if llm_service == 'hf':
         HfFolder.save_token(os.getenv('HUGGINGFACEHUB_API_TOKEN'))
@@ -65,7 +65,7 @@ def join_papers(paper_texts, paper_header, max_input_length: int = 32000):
 
 
 def main(papers: list, temperature: float, model_name: str, llm_service: str, cache: str, use_summaries: bool = True,
-         prompt_template: str = DEFAULT_PROMPT_TEMPLATE):
+         prompt_template: str = DEFAULT_PROMPT_TEMPLATE, max_length: int = 32000):
     if cache == "memory":
         langchain.llm_cache = InMemoryCache()
     elif cache == "sqlite":
@@ -82,7 +82,7 @@ def main(papers: list, temperature: float, model_name: str, llm_service: str, ca
             paper_texts.append(text)
 
     # Generate a summary for the combined text of all research papers
-    combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service, prompt_template)
+    combined_summary = generate_combined_summary(paper_texts, temperature, model_name, llm_service, prompt_template, max_length)
     print("Combined Summary:")
     print(combined_summary.split('[/INST]')[1])
 
@@ -96,6 +96,7 @@ if __name__ == "__main__":
     parser.add_argument('--deployment_name', metavar='dn', type=str, help='deployment name',
                         default="gpt-35-turbo")
     parser.add_argument('--temperature', metavar='tp', type=float, help='LLM temperature', default=0.01)
+    parser.add_argument('--max_length', metavar='ml', type=int, help='LLM temperature', default=32000)
     parser.add_argument('--use_summaries', metavar='us', type=bool, help='whether to use abstracts or not',
                         default=False)
     parser.add_argument('--llm_service', metavar='l', type=str, help='LLM service',
@@ -113,4 +114,5 @@ if __name__ == "__main__":
     llm_service = args.llm_service
     use_summaries = args.use_summaries
     prompt_template = args.prompt_template
-    main(papers, temperature, model_name, llm_service, cache, use_summaries, prompt_template)
+    max_length = args.max_length
+    main(papers, temperature, model_name, llm_service, cache, use_summaries, prompt_template, max_length)
